@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -20,6 +21,7 @@ import (
 	"github.com/sandipbera35/geo-post-api/middlewares"
 	"github.com/sandipbera35/geo-post-api/repo"
 	"github.com/sandipbera35/geo-post-api/service"
+	"github.com/sandipbera35/geo-post-api/workers"
 )
 
 // cfg, pg, rdb, and sqlDB are populated once in init, before main runs, and
@@ -88,9 +90,10 @@ func loadEnvFile() {
 func main() {
 	eventRepo := repo.NewEventRepository(pg, rdb)
 	feedRepo := repo.NewFeedRepository(pg, rdb)
+	profileRepo := repo.NewUserProfileRepository(rdb)
 	uploadRepo := repo.NewUploadRepository(minioClient)
 	eventService := service.NewEventService(eventRepo)
-	feedService := service.NewFeedService(feedRepo)
+	feedService := service.NewFeedService(feedRepo, profileRepo)
 	uploadService := service.NewUploadService(uploadRepo, cfg.MinioEndpoint, cfg.MinioUseSSL)
 
 	router := gin.Default()
@@ -115,6 +118,8 @@ func main() {
 	v1.POST("/events", controllers.CreateEventHandler(eventService))
 	v1.GET("/feed", controllers.GetFeedHandler(feedService))
 	v1.GET("/uploads/presigned-url", controllers.GenerateUploadURL(uploadService))
+
+	go workers.StartExpiryWorker(pg, rdb, 15*time.Minute)
 
 	if err := router.Run(":" + cfg.Port); err != nil {
 		log.Fatalf("server: %v", err)
