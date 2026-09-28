@@ -1,0 +1,958 @@
+{
+  "info": {
+    "_postman_id": "f3dfd8ea-b4c6-4a61-b971-795d1d380efc",
+    "name": "geo-post-api",
+    "description": "Collection for the geo-post-api service (hyper-local social media backend). A single Gin service backed by Postgres (GORM) and Redis, with Zero-Trust JWT auth, plus MinIO-backed media uploads.\n\nEnvironment variables used throughout:\n- `base_url` - geo-post-api base URL, e.g. `http://localhost:8091`\n- `baseurl` - the external auth service's base URL, e.g. `http://localhost:8081`. Used only by the **Auth** folder to obtain a token for testing - geo-post-api itself never calls this at request time (Zero-Trust: it only verifies JWTs locally against JWT_PUBLIC_KEY_PATH).\n- `TOKEN` / `REFRESH_TOKEN` - set automatically by **Auth > LogIn(GetToken)**'s test script. Every request under **Protected (api/v1)** sends `Authorization: Bearer {{TOKEN}}` via folder-level auth - run LogIn(GetToken) first.\n\nSee the `geo-post-api` environment file in this folder for the variable definitions.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "31158988",
+    "_collection_link": "https://go.postman.co/collection/31158988-f3dfd8ea-b4c6-4a61-b971-795d1d380efc?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "LogIn(GetToken)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const response = pm.response.json();\npm.collectionVariables.set('TOKEN', response.accessToken);\npm.collectionVariables.set('REFRESH_TOKEN', response.refreshToken);\n"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@localhost.com\",\n  \"password\": \"admin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{centerurl}}/api/auth/login",
+              "host": [
+                "{{centerurl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Logs into the external auth service to obtain an RS256 access token signed with the private key matching this repo's `cert/public_key.pem`. On success, the attached test script saves `accessToken` into `TOKEN` and `refreshToken` into `REFRESH_TOKEN` - every request under **Protected (api/v1)** picks up `TOKEN` immediately, no manual copy/paste needed. Run this first."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"admin@localhost.com\",\n  \"password\": \"admin\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseurl}}/api/auth/login",
+                  "host": [
+                    "{{baseurl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "login"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"accessToken\": \"eyJraWQiOiIuLi4iLCJhbGciOiJSUzI1NiJ9...\",\n    \"refreshToken\": \"eyJraWQiOiIuLi4iLCJhbGciOiJSUzI1NiJ9...\",\n    \"tokenType\": \"Bearer\",\n    \"expiresIn\": 900\n}"
+            }
+          ]
+        }
+      ],
+      "description": "The external auth service geo-post-api trusts (issues the RS256 JWTs `middlewares.RequireAuth()` verifies). It is a separate system, not part of this repo - this folder exists purely so the collection is self-sufficient for testing. geo-post-api never calls it at request time.\n\nRun **LogIn(GetToken)** first - its test script saves `accessToken`/`refreshToken` from the response into the `TOKEN`/`REFRESH_TOKEN` collection variables automatically."
+    },
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Liveness/readiness check. Pings Postgres and Redis on every call — returns 503 if either is unreachable, 200 if both are up. Not a static health response; safe to use as a real readiness probe."
+          },
+          "response": [
+            {
+              "name": "200 OK - all dependencies up",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/health",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "health"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"status\": \"ok\"\n}"
+            },
+            {
+              "name": "503 Service Unavailable - postgres down",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/health",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "health"
+                  ]
+                }
+              },
+              "status": "Service Unavailable",
+              "code": 503,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"status\": \"down\",\n    \"component\": \"postgres\"\n}"
+            },
+            {
+              "name": "503 Service Unavailable - redis down",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/health",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "health"
+                  ]
+                }
+              },
+              "status": "Service Unavailable",
+              "code": 503,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"status\": \"down\",\n    \"component\": \"redis\"\n}"
+            }
+          ]
+        }
+      ],
+      "description": "Unauthenticated infrastructure endpoints, mounted directly on the root router (no /api/v1 prefix)."
+    },
+    {
+      "name": "Protected (api/v1)",
+      "item": [
+        {
+          "name": "Get Current User",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me"
+              ]
+            },
+            "description": "Dummy route added in Step 2 to prove RequireAuth() wiring. Returns the `sub` claim (as `user_id`) extracted from the verified JWT. Requires a Bearer token signed with the RSA private key matching JWT_PUBLIC_KEY_PATH."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{TOKEN}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/me",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "me"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"user_id\": \"user-123\"\n}"
+            },
+            {
+              "name": "401 Unauthorized - missing/malformed header",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/me",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "me"
+                  ]
+                }
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"error\": \"missing or malformed authorization header\"\n}"
+            },
+            {
+              "name": "401 Unauthorized - invalid or expired token",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer expired.or.invalid.token"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/me",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "me"
+                  ]
+                }
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"error\": \"invalid or expired token\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Presigned Upload URL",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/uploads/presigned-url?ext=jpg",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "uploads",
+                "presigned-url"
+              ],
+              "query": [
+                {
+                  "key": "ext",
+                  "value": "jpg",
+                  "description": "One of: jpg, jpeg, png, gif, webp"
+                }
+              ]
+            },
+            "description": "Returns a presigned MinIO PUT URL (valid 15 minutes) for a unique object in the `pulse-media` bucket, plus the public `media_url` it will be reachable at once uploaded (the bucket has a public-read policy, so no auth is needed to view it afterwards). Upload flow: 1) call this endpoint, 2) `PUT` the raw file bytes to `presigned_url`, 3) pass `media_url` in **Create Event**'s body."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{TOKEN}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/uploads/presigned-url?ext=jpg",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "uploads",
+                    "presigned-url"
+                  ],
+                  "query": [
+                    {
+                      "key": "ext",
+                      "value": "jpg"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"presigned_url\": \"http://localhost:9000/pulse-media/3fa85f64-5717-4562-b3fc-2c963f66afa6.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=...&X-Amz-Date=...&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=...\",\n    \"media_url\": \"http://localhost:9000/pulse-media/3fa85f64-5717-4562-b3fc-2c963f66afa6.jpg\"\n}"
+            },
+            {
+              "name": "400 Bad Request - invalid ext",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{TOKEN}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/uploads/presigned-url?ext=exe",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "uploads",
+                    "presigned-url"
+                  ],
+                  "query": [
+                    {
+                      "key": "ext",
+                      "value": "exe"
+                    }
+                  ]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"error\": \"ext must be one of: jpg, jpeg, png, gif, webp\"\n}"
+            },
+            {
+              "name": "401 Unauthorized - missing/malformed header",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/uploads/presigned-url?ext=jpg",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "uploads",
+                    "presigned-url"
+                  ],
+                  "query": [
+                    {
+                      "key": "ext",
+                      "value": "jpg"
+                    }
+                  ]
+                }
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"error\": \"missing or malformed authorization header\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Create Event",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"title\": \"Pop-up farmers market\",\n    \"description\": \"Fresh produce and local vendors in the park\",\n    \"category\": \"market\",\n    \"latitude\": 37.7749,\n    \"longitude\": -122.4194\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/events",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "events"
+              ]
+            },
+            "description": "Creates a local event. Saves the event to Postgres, then indexes its coordinates into the `events:geo` Redis geo set via `GEOADD` (keyed by the event's UUID) so nearby-event queries can use `GEOSEARCH`/`GEORADIUS`. `user_id` is taken from the verified JWT (`sub` claim), not the request body. `expires_at` defaults to 24 hours after creation if not otherwise set server-side. `media_url` is optional - get one from **Get Presigned Upload URL** first, PUT the file to `presigned_url`, then pass the returned `media_url` here."
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"title\": \"Pop-up farmers market\",\n    \"description\": \"Fresh produce and local vendors in the park\",\n    \"category\": \"market\",\n    \"latitude\": 37.7749,\n    \"longitude\": -122.4194\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/events",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "events"
+                  ]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"id\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\n    \"user_id\": \"9b2e1e0a-8f3d-4b7a-9c3e-2f6a1d4c5b6e\",\n    \"title\": \"Pop-up farmers market\",\n    \"description\": \"Fresh produce and local vendors in the park\",\n    \"category\": \"market\",\n    \"latitude\": 37.7749,\n    \"longitude\": -122.4194,\n    \"created_at\": \"2026-09-28T10:00:00Z\",\n    \"expires_at\": \"2026-09-29T10:00:00Z\"\n}"
+            },
+            {
+              "name": "201 Created - with media_url",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"title\": \"Pop-up farmers market\",\n    \"description\": \"Fresh produce and local vendors in the park\",\n    \"category\": \"market\",\n    \"latitude\": 37.7749,\n    \"longitude\": -122.4194,\n    \"media_url\": \"http://localhost:9000/pulse-media/3fa85f64-5717-4562-b3fc-2c963f66afa6.jpg\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/events",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "events"
+                  ]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"id\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\n    \"user_id\": \"14\",\n    \"title\": \"Pop-up farmers market\",\n    \"description\": \"Fresh produce and local vendors in the park\",\n    \"category\": \"market\",\n    \"latitude\": 37.7749,\n    \"longitude\": -122.4194,\n    \"created_at\": \"2026-09-28T10:00:00Z\",\n    \"expires_at\": \"2026-09-29T10:00:00Z\",\n    \"media_url\": \"http://localhost:9000/pulse-media/3fa85f64-5717-4562-b3fc-2c963f66afa6.jpg\"\n}"
+            },
+            {
+              "name": "400 Bad Request - validation failed",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"description\": \"missing a title, bad coordinates\",\n    \"latitude\": 200,\n    \"longitude\": -122.4194\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/events",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "events"
+                  ]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"error\": \"Key: 'createEventRequest.Title' Error:Field validation for 'Title' failed on the 'required' tag\"\n}"
+            },
+            {
+              "name": "401 Unauthorized - missing/malformed header",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"title\": \"Pop-up farmers market\",\n    \"latitude\": 37.7749,\n    \"longitude\": -122.4194\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/events",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "events"
+                  ]
+                }
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"error\": \"missing or malformed authorization header\"\n}"
+            },
+            {
+              "name": "500 Internal Server Error - create failed",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"title\": \"Pop-up farmers market\",\n    \"latitude\": 37.7749,\n    \"longitude\": -122.4194\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/events",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "events"
+                  ]
+                }
+              },
+              "status": "Internal Server Error",
+              "code": 500,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"error\": \"failed to create event\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Nearby Feed",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/feed?lat=37.7749&lng=-122.4194&radius=5",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "feed"
+              ],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "37.7749",
+                  "description": "Latitude of the search center (required)"
+                },
+                {
+                  "key": "lng",
+                  "value": "-122.4194",
+                  "description": "Longitude of the search center (required)"
+                },
+                {
+                  "key": "radius",
+                  "value": "5",
+                  "description": "Search radius in km (optional, defaults to 5.0)"
+                }
+              ]
+            },
+            "description": "Returns LocalEvents within `radius` km of (lat, lng), newest first. Runs a Redis `GEOSEARCH` on `events:geo` to get nearby event ids, then hydrates the matching rows from Postgres (`WHERE id IN (...) ORDER BY created_at DESC`). Returns `[]` (never null) when nothing is nearby."
+          },
+          "response": [
+            {
+              "name": "200 OK - events nearby",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{TOKEN}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/feed?lat=37.7749&lng=-122.4194&radius=5",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "feed"
+                  ],
+                  "query": [
+                    {
+                      "key": "lat",
+                      "value": "37.7749"
+                    },
+                    {
+                      "key": "lng",
+                      "value": "-122.4194"
+                    },
+                    {
+                      "key": "radius",
+                      "value": "5"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "[\n    {\n        \"id\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\n        \"user_id\": \"14\",\n        \"title\": \"Pop-up farmers market\",\n        \"description\": \"Fresh produce and local vendors in the park\",\n        \"category\": \"market\",\n        \"latitude\": 37.7749,\n        \"longitude\": -122.4194,\n        \"created_at\": \"2026-09-28T10:00:00Z\",\n        \"expires_at\": \"2026-09-29T10:00:00Z\"\n    }\n]"
+            },
+            {
+              "name": "200 OK - nothing nearby",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{TOKEN}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/feed?lat=40.7128&lng=-74.0060&radius=1",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "feed"
+                  ],
+                  "query": [
+                    {
+                      "key": "lat",
+                      "value": "40.7128"
+                    },
+                    {
+                      "key": "lng",
+                      "value": "-74.0060"
+                    },
+                    {
+                      "key": "radius",
+                      "value": "1"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "[]"
+            },
+            {
+              "name": "400 Bad Request - missing/invalid lat or lng",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{TOKEN}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/feed?lng=-122.4194",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "feed"
+                  ],
+                  "query": [
+                    {
+                      "key": "lng",
+                      "value": "-122.4194"
+                    }
+                  ]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"error\": \"invalid or missing lat\"\n}"
+            },
+            {
+              "name": "401 Unauthorized - missing/malformed header",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/feed?lat=37.7749&lng=-122.4194",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "feed"
+                  ],
+                  "query": [
+                    {
+                      "key": "lat",
+                      "value": "37.7749"
+                    },
+                    {
+                      "key": "lng",
+                      "value": "-122.4194"
+                    }
+                  ]
+                }
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"error\": \"missing or malformed authorization header\"\n}"
+            }
+          ]
+        }
+      ],
+      "description": "Routes under the `/api/v1` group, gated by `middlewares.RequireAuth()` (RSA-verified JWT, Zero-Trust — no auth-service network call at request time). Folder-level auth applies `Authorization: Bearer {{TOKEN}}` to every request inside unless a request overrides it.",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{TOKEN}}",
+            "type": "string"
+          }
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8091"
+    },
+    {
+      "key": "centerurl",
+      "value": "http://localhost:8081"
+    },
+    {
+      "key": "TOKEN",
+      "value": ""
+    },
+    {
+      "key": "REFRESH_TOKEN",
+      "value": ""
+    },
+    {
+      "key": "centerurl",
+      "value": ""
+    }
+  ]
+}
