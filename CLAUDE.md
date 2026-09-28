@@ -79,6 +79,24 @@ postman/           API collection — keep in sync with routes (see below)
 
 `/api/v1` is the protected route group (`router.Group` + `middlewares.RequireAuth()`); add new authenticated endpoints under it. Unauthenticated endpoints go directly on `router`, alongside `/health`.
 
+## Docker
+
+`Dockerfile` — multi-stage build: `golang:1.27-alpine` compiles a static (`CGO_ENABLED=0`) binary, copied into a minimal `alpine:3.20` runtime image along with `cert/` (needed since `cert/*` is gitignored but must still exist locally when you build — the image is built from the local filesystem, not from git). `JWT_PUBLIC_KEY_PATH` is set explicitly via `ENV` in the runtime stage (`/app/cert/public_key.pem`) because `config.go`'s compile-time-computed default path is anchored to the *build* stage's source location (`/src/...`), which doesn't exist in the final image.
+
+```bash
+docker build -t geo-post-api:latest .
+docker run -d --name geo-post-api -p 8092:8080 \
+  -e DB_URL="postgres://user:pass@host.docker.internal:5432/geopost?sslmode=disable" \
+  -e REDIS_URL="redis://host.docker.internal:6379/0" \
+  -e MINIO_ENDPOINT="host.docker.internal:9000" \
+  -e MINIO_ACCESS_KEY="minioadmin" -e MINIO_SECRET_KEY="minioadmin" \
+  geo-post-api:latest
+```
+
+`host.docker.internal` is Docker Desktop's hostname for reaching services published on the host (used here because Postgres/Redis/MinIO in local dev each live on their own separate docker-compose network, not one shared with this container — joining a shared network per-service is the alternative if that's ever preferable).
+
+**Known limitation:** `host.docker.internal` only resolves *inside* Docker containers, not from a real client (browser, mobile app) outside Docker. Since `MinIO`'s presigned-URL signature bakes in whatever endpoint the client was configured with, the `presigned_url`/`media_url` returned by `GET /api/v1/uploads/presigned-url` are Docker-internal-only when run this way — a real external client can't use them as-is. Fixing this needs a second MinIO client (or a separate `MINIO_PUBLIC_ENDPOINT`) used only for signing presigned URLs, distinct from the one used for admin calls (bucket checks) at boot — not implemented, since it wasn't needed yet.
+
 ## Postman
 
 `postman/geo-post-api.postman_collection.json` — a single self-contained collection file (variables live in its own `variable` array, no separate environment file: `base_url` for this service, `baseurl` for the external auth service, `TOKEN`/`REFRESH_TOKEN` set automatically by the `Auth` folder's `LogIn(GetToken)` test script) — documents every route, with example success and error responses. **Whenever a route is added, removed, or its request/response shape changes, update this collection in the same change** — folders are organized to mirror the router (`Health` = unauthenticated root routes, `Auth` = the external login used only to obtain a test token, `Protected (api/v1)` = the `/api/v1` group, which carries folder-level Bearer auth using `{{TOKEN}}`).
